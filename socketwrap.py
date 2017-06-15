@@ -50,8 +50,7 @@ command: The command this program should wrap (including any arguments).
 		error = [] # sockets we need to handle errors for
 		all_clients = []
 		read.append(server_sock) # add the server socket so we can accept new connections
-		running = True
-		while running:
+		while subproc.poll()==None:
 			r, w, e = select.select(read, write, error, 3)
 			for sock in r: # for each socket that has something to be read
 				if sock == server_sock: # this is the server socket, accept the new connection
@@ -63,11 +62,16 @@ command: The command this program should wrap (including any arguments).
 					all_clients.append(con)
 				else: # socket with something to read is not the server
 					# large amounts of data might cause a lockup; it's unlikely though
-					data = sock.recv(8192)
+					print("Using makefile")
+					f = sock.makefile('r') # use makefile because data should be split by lines
+					data = f.readline()
+					f.close()
+					print("File closed and data retrieved.")
 					if data:
 						try:
 							subproc.stdin.write(data)
-						Except IOError as e: # the subprocess has closed
+							subproc.stdin.flush()
+						except IOError as e: # the subprocess has closed
 							raise KeyboardInterrupt # trigger an exit
 					else: # a client sending an empty string indicates a disconnect
 						read.remove(sock)
@@ -85,9 +89,12 @@ command: The command this program should wrap (including any arguments).
 				print("Sending {}.".format(i))
 				for sock in w: # for every socket who's buffer is free for writing
 					print("Sent.")
-					sock.send(i)
+					sock.sendall(bytes(i))
+				print("Finished sending")
 			# handle sockets with errors
+			print("Handling errors...")
 			for sock in e:
+				print("Socket {} has an error!".format(sock.getpeername()))
 				if sock in rread:
 					r.remove(sock)
 				if sock in write:
@@ -95,9 +102,13 @@ command: The command this program should wrap (including any arguments).
 				error.remove(sock)
 				all_clients.remove(sock)
 				sock.close()
+		# main loop has exited
+		for sock in all_clients:
+			sock.send("Process has exited.")
+		raise KeyboardInterrupt
 	except Exception as e:
 		if e is KeyboardInterrupt:
-			print("Shuttingdown.")
+			print("Shutting down.")
 		else:
 			print("""Shutting down do to error: {}""".format(e))
 		stop_flag.set()
