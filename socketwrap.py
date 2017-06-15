@@ -89,7 +89,7 @@ command: The command this program should wrap (including any arguments).
 			for sock in e:
 				print("Socket {} has an error!".format(sock.getpeername()))
 				if sock in rread:
-					r.remove(sock)
+					read.remove(sock)
 				if sock in write:
 					write.remove(sock)
 				error.remove(sock)
