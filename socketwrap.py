@@ -40,7 +40,7 @@ command: The command this program should wrap (including any arguments).
 		command_output_queue = deque() # queue of strings sent by the command we're wrapping
 		stop_flag = threading.Event()
 		t = threading.Thread(target=poll_command_for_output, args=([subproc.stdout, subproc.stderr], command_output_queue, 0.1, stop_flag))
-		t.start()
+		# t.start()
 		server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server_sock.bind((hostname, port))
 		server_sock.listen(2)
@@ -62,11 +62,9 @@ command: The command this program should wrap (including any arguments).
 					all_clients.append(con)
 				else: # socket with something to read is not the server
 					# large amounts of data might cause a lockup; it's unlikely though
-					print("Using makefile")
 					f = sock.makefile('r') # use makefile because data should be split by lines
 					data = f.readline()
 					f.close()
-					print("File closed and data retrieved.")
 					if data:
 						try:
 							subproc.stdin.write(data)
@@ -84,15 +82,10 @@ command: The command this program should wrap (including any arguments).
 						sock.close()
 			# now check if the command has any output that needs to be sent to clients
 			if command_output_queue and w: # if there is at least one item in the queue and there is at least one socket to send it to
-				print("Something in the queue to send.")
 				i = command_output_queue.popleft()
-				print("Sending {}.".format(i))
 				for sock in w: # for every socket who's buffer is free for writing
-					print("Sent.")
-					sock.sendall(bytes(i))
-				print("Finished sending")
+					sock.sendall(i)
 			# handle sockets with errors
-			print("Handling errors...")
 			for sock in e:
 				print("Socket {} has an error!".format(sock.getpeername()))
 				if sock in rread:
@@ -102,6 +95,8 @@ command: The command this program should wrap (including any arguments).
 				error.remove(sock)
 				all_clients.remove(sock)
 				sock.close()
+				print("{} has been disconnected.".format(sock.getpeername()))
+
 		# main loop has exited
 		for sock in all_clients:
 			sock.send("Process has exited.")
@@ -123,10 +118,12 @@ def poll_command_for_output(handles, output_queue, poll_time, stop_flag):
 	"""For every file-like object in the 'handles' list, check every poll_time to see if it has new output. If it does, add it as a string to output_queue."""
 	while not stop_flag.is_set():
 		for h in handles:
-			buff = h.read(8192)
+			try:
+				buff = h.read(8192)
+			except IOError as e:
+				pass
 			if buff:
 				output_queue.append(buff)
-				print("Something added to output queue")
 		time.sleep(poll_time)
 
 
