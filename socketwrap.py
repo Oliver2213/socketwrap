@@ -40,7 +40,7 @@ command: The command this program should wrap (including any arguments).
 		command_output_queue = deque() # queue of strings sent by the command we're wrapping
 		stop_flag = threading.Event()
 		t = threading.Thread(target=poll_command_for_output, args=([subproc.stdout, subproc.stderr], command_output_queue, 0.1, stop_flag))
-		# t.start()
+		t.start()
 		server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server_sock.bind((hostname, port))
 		server_sock.listen(2)
