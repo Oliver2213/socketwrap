@@ -6,6 +6,7 @@ import click
 import socket
 import select
 import subprocess
+import sys
 import time
 import threading
 
@@ -101,16 +102,24 @@ command: The command this program should wrap (including any arguments).
 		for sock in all_clients:
 			sock.send("Process has exited.")
 		raise KeyboardInterrupt
-	except Exception as e:
-		if e is KeyboardInterrupt:
-			print("Shutting down.")
+	except BaseException as e:
+		if isinstance(e, KeyboardInterrupt):
+			if subproc.poll() != None:
+				reason = "Shutting down because command has exited."
+			else: # subprocess is still running
+				reason = "Shutting down."
+			print(reason)
 		else:
-			print("""Shutting down do to error: {}""".format(e))
+			reason = """Shutting down do to error: {}""".format(e)
 		stop_flag.set()
 		for sock in all_clients:
-			sock.send("Shutting down. Goodbye.")
+			sock.send(reason)
 			sock.close()
 		server_sock.close()
+		del(read)
+		del(write)
+		del(error)
+		del(server_sock)
 		subproc.kill()
 
 
@@ -119,7 +128,8 @@ def poll_command_for_output(handles, output_queue, poll_time, stop_flag):
 	while not stop_flag.is_set():
 		for h in handles:
 			try:
-				buff = h.read(8192)
+				# buff = h.read(8192)
+				buff = h.readline()
 			except IOError as e:
 				pass
 			if buff:
@@ -128,4 +138,14 @@ def poll_command_for_output(handles, output_queue, poll_time, stop_flag):
 
 
 if __name__ == '__main__':
-	socket_wrap()
+	# socket_wrap()
+	# handle click exceptions
+	try:
+		# return_code = socket_wrap.main(standalone_mode=False)
+		context = socket_wrap.make_context(sys.argv[0], sys.argv[1:])
+		with context:
+			return_code = socket_wrap.invoke(context)
+	except click.ClickException as e:
+		return_code = e.return_code
+		e.show()
+	sys.exit(return_code)
