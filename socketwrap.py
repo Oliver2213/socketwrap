@@ -17,8 +17,9 @@ import subprocess_nonblocking
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
+@click.option('--thread-sleep-time', '-t', default=0.2, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(hostname, port, enable_multiple_connections, command):
+def socket_wrap(hostname, port, enable_multiple_connections, thread_sleep_time, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 Args:
 command: The command this program should wrap (including any arguments).
@@ -42,7 +43,7 @@ command: The command this program should wrap (including any arguments).
 	try:
 		command_output_queue = deque() # queue of strings sent by the command we're wrapping
 		stop_flag = threading.Event()
-		t = threading.Thread(target=nonblocking_poll_command_for_output, args=(subproc, command_output_queue, 0.1, stop_flag))
+		t = threading.Thread(target=nonblocking_poll_command_for_output, args=(subproc, command_output_queue, thread_sleep_time, stop_flag))
 		t.start()
 		server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server_sock.bind((hostname, port))
@@ -53,7 +54,8 @@ command: The command this program should wrap (including any arguments).
 		error = [] # sockets we need to handle errors for
 		all_clients = []
 		read.append(server_sock) # add the server socket so we can accept new connections
-		while subproc.poll()==None:
+		running = True
+		while running:
 			r, w, e = select.select(read, write, error, 3)
 			for sock in r: # for each socket that has something to be read
 				if sock == server_sock: # this is the server socket, accept the new connection
@@ -79,7 +81,7 @@ command: The command this program should wrap (including any arguments).
 							subproc.stdin.write(data)
 							subproc.stdin.flush()
 						except IOError as e: # the subprocess has closed
-							raise KeyboardInterrupt # trigger an exit
+							running = False
 					else: # a client sending an empty string indicates a disconnect
 						read.remove(sock)
 						print("{} has disconnected.".format(sock.getpeername()))
@@ -92,6 +94,8 @@ command: The command this program should wrap (including any arguments).
 			# now check if the command has any output that needs to be sent to clients
 			if len(command_output_queue)>0 and len(w)>0: # if there is at least one item in the queue and there is at least one socket to send it to
 				i = command_output_queue.popleft()
+				if i == False: # the reader thread has noticed the process has exited or closed it's pipes
+					running = False
 				for sock in w: # for every socket who's buffer is free for writing
 					sock.sendall(i)
 			# handle sockets with errors
@@ -137,11 +141,10 @@ def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, stop_f
 			stderr_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, stderr=True)
 			if stdout_buff:
 				output_queue.append(stdout_buff)
-
 			if stderr_buff:
 				output_queue.append(stderr_buff)
 		except subprocess_nonblocking.PipeClosedError as e:
-			pass
+			output_queue.append(False)
 		time.sleep(poll_time)
 
 def blocking_poll_command_for_output(handles, output_queue, poll_time, stop_flag):
