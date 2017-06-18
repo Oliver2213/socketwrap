@@ -97,6 +97,7 @@ command: The command this program should wrap (including any arguments).
 				i = command_output_queue.popleft()
 				if i == False: # the reader thread has noticed the process has exited or closed it's pipes
 					running = False
+					raise KeyboardInterrupt # directly raise it to stop the boolean from being sent instead of waiting for the loop to complete
 				for sock in w: # for every socket who's buffer is free for writing
 					sock.sendall(i)
 			# handle sockets with errors
