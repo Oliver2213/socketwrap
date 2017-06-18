@@ -59,11 +59,16 @@ command: The command this program should wrap (including any arguments).
 				if sock == server_sock: # this is the server socket, accept the new connection
 					con, addr = sock.accept()
 					print("""{} has connected.""".format(addr))
-					read.append(con)
-					write.append(con)
-					error.append(con)
-					all_clients.append(con)
-					con.sendall("Welcome!\nThis is socketwrap, running command {}\n".format(str(command)))
+					if enable_multiple_connections or len(all_clients)==0:
+						read.append(con)
+						write.append(con)
+						error.append(con)
+						all_clients.append(con)
+						con.sendall("Welcome!\nThis is socketwrap, running command {}\n".format(" ".join(command)))
+					else: # there is already one client connected and enable_multiple_connections is false
+						con.sendall("Sorry, allowing multiple connections is disabled.\nGoodbye.")
+						con.close()
+						print("{} has been disconnected because allowing multiple connections is disabled.".format(addr))
 				else: # socket with something to read is not the server
 					# large amounts of data might cause a lockup; it's unlikely though
 					f = sock.makefile('r') # use makefile because data should be split by lines
@@ -135,7 +140,7 @@ def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, stop_f
 
 			if stderr_buff:
 				output_queue.append(stderr_buff)
-		except subprocess_nonblocking.ClosedPipeError as e:
+		except subprocess_nonblocking.PipeClosedError as e:
 			pass
 		time.sleep(poll_time)
 
