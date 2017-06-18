@@ -17,9 +17,10 @@ import subprocess_nonblocking
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
+@click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
 @click.option('--thread-sleep-time', '-t', default=0.2, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(hostname, port, enable_multiple_connections, thread_sleep_time, command):
+def socket_wrap(hostname, port, enable_multiple_connections, loop_delay, thread_sleep_time, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 Args:
 command: The command this program should wrap (including any arguments).
@@ -109,6 +110,8 @@ command: The command this program should wrap (including any arguments).
 				all_clients.remove(sock)
 				sock.close()
 				print("{} has been disconnected.".format(sock.getpeername()))
+			if loop_delay>0:
+				time.sleep(loop_delay)
 
 		# main loop has exited
 		raise KeyboardInterrupt
@@ -137,8 +140,8 @@ def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, stop_f
 	"""Check stdout and stderr every poll_time to see if it has new output. If it does, add it as a string to output_queue."""
 	while not stop_flag.is_set():
 		try:
-			stdout_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time)
-			stderr_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, stderr=True)
+			stdout_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, tries=1)
+			stderr_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, tries=1, stderr=True)
 			if stdout_buff:
 				output_queue.append(stdout_buff)
 			if stderr_buff:
