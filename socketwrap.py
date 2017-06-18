@@ -24,6 +24,7 @@ command: The command this program should wrap (including any arguments).
 	Any data received from it's stdout and stderr streams is buffered until the first client connects.
 	If the command exits with a non-zero returncode before the server is initialized, it's stderr is printed to the console.
 """
+	command = list(command)
 	subproc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
 	time.sleep(0.2) # wait a bit before checking it's returncode
 	r = subproc.poll()
@@ -61,6 +62,7 @@ command: The command this program should wrap (including any arguments).
 					write.append(con)
 					error.append(con)
 					all_clients.append(con)
+					con.sendall("Welcome!\nThis is socketwrap, running command {}\n".format(str(command)))
 				else: # socket with something to read is not the server
 					# large amounts of data might cause a lockup; it's unlikely though
 					f = sock.makefile('r') # use makefile because data should be split by lines
@@ -82,7 +84,7 @@ command: The command this program should wrap (including any arguments).
 						all_clients.remove(sock)
 						sock.close()
 			# now check if the command has any output that needs to be sent to clients
-			if command_output_queue and w: # if there is at least one item in the queue and there is at least one socket to send it to
+			if len(command_output_queue)>0 and len(w)>0: # if there is at least one item in the queue and there is at least one socket to send it to
 				i = command_output_queue.popleft()
 				for sock in w: # for every socket who's buffer is free for writing
 					sock.sendall(i)
@@ -99,21 +101,19 @@ command: The command this program should wrap (including any arguments).
 				print("{} has been disconnected.".format(sock.getpeername()))
 
 		# main loop has exited
-		for sock in all_clients:
-			sock.send("Process has exited.")
 		raise KeyboardInterrupt
 	except BaseException as e:
 		if isinstance(e, KeyboardInterrupt):
 			if subproc.poll() != None:
-				reason = "Shutting down because command has exited."
+				reason = "Shutting down because command has exited.\n"
 			else: # subprocess is still running
-				reason = "Shutting down."
+				reason = "Shutting down.\n"
 			print(reason)
 		else:
-			reason = """Shutting down do to error: {}""".format(e)
+			reason = """Shutting down do to error:\n{}\n""".format(e)
 		stop_flag.set()
 		for sock in all_clients:
-			sock.send(reason)
+			sock.sendall(reason)
 			sock.close()
 		server_sock.close()
 		del(read)
@@ -130,10 +130,10 @@ def poll_command_for_output(handles, output_queue, poll_time, stop_flag):
 			try:
 				# buff = h.read(8192)
 				buff = h.readline()
+				if buff:
+					output_queue.append(buff)
 			except IOError as e:
 				pass
-			if buff:
-				output_queue.append(buff)
 		time.sleep(poll_time)
 
 
@@ -146,6 +146,6 @@ if __name__ == '__main__':
 		with context:
 			return_code = socket_wrap.invoke(context)
 	except click.ClickException as e:
-		return_code = e.return_code
+		return_code = getattr("e", "return_code", None) or 1
 		e.show()
 	sys.exit(return_code)
