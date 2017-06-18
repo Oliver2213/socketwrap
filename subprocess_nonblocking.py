@@ -158,6 +158,10 @@ def send_all(subproc, data):
             raise PipeClosedError
         data = buffer(data, sent)
 
+
+class PipeClosedError(Exception):
+	pass
+
 if __name__ == '__main__':
     if sys.platform == 'win32':
         shell, commands, tail = ('cmd', ('dir /w', 'echo HELLO WORLD'), '\r\n')
