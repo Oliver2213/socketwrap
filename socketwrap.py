@@ -5,10 +5,11 @@ from collections import deque
 import click
 import socket
 import select
-import subprocess
+from subprocess import PIPE
 import sys
 import time
 import threading
+import subprocess_nonblocking
 
 # define the command and it's options and args
 
@@ -25,7 +26,7 @@ command: The command this program should wrap (including any arguments).
 	If the command exits with a non-zero returncode before the server is initialized, it's stderr is printed to the console.
 """
 	command = list(command)
-	subproc = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True)
+	subproc = subprocess_nonblocking.Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
 	time.sleep(0.2) # wait a bit before checking it's returncode
 	r = subproc.poll()
 	if r != None:
@@ -41,7 +42,7 @@ command: The command this program should wrap (including any arguments).
 	try:
 		command_output_queue = deque() # queue of strings sent by the command we're wrapping
 		stop_flag = threading.Event()
-		t = threading.Thread(target=poll_command_for_output, args=([subproc.stdout, subproc.stderr], command_output_queue, 0.1, stop_flag))
+		t = threading.Thread(target=nonblocking_poll_command_for_output, args=(subproc, command_output_queue, 0.1, stop_flag))
 		t.start()
 		server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server_sock.bind((hostname, port))
@@ -123,7 +124,22 @@ command: The command this program should wrap (including any arguments).
 		subproc.kill()
 
 
-def poll_command_for_output(handles, output_queue, poll_time, stop_flag):
+def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, stop_flag):
+	"""Check stdout and stderr every poll_time to see if it has new output. If it does, add it as a string to output_queue."""
+	while not stop_flag.is_set():
+		try:
+			stdout_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time)
+			stderr_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, stderr=True)
+			if stdout_buff:
+				output_queue.append(stdout_buff)
+
+			if stderr_buff:
+				output_queue.append(stderr_buff)
+		except subprocess_nonblocking.ClosedPipeError as e:
+			pass
+		time.sleep(poll_time)
+
+def blocking_poll_command_for_output(handles, output_queue, poll_time, stop_flag):
 	"""For every file-like object in the 'handles' list, check every poll_time to see if it has new output. If it does, add it as a string to output_queue."""
 	while not stop_flag.is_set():
 		for h in handles:
