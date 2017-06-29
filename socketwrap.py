@@ -160,18 +160,6 @@ def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, append
 			output_queue.append(False)
 		time.sleep(poll_time)
 
-def blocking_poll_command_for_output(handles, output_queue, poll_time, stop_flag):
-	"""For every file-like object in the 'handles' list, check every poll_time to see if it has new output. If it does, add it as a string to output_queue."""
-	while not stop_flag.is_set():
-		for h in handles:
-			try:
-				# buff = h.read(8192)
-				buff = h.readline()
-				if buff:
-					output_queue.append(buff)
-			except IOError as e:
-				pass
-		time.sleep(poll_time)
 
 def info_message(command):
 	w = """This is socketwrap, running command {}\n""".format(" ".join(command))
