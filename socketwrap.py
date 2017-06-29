@@ -133,7 +133,7 @@ command: The command this program should wrap (including any arguments).
 		stop_flag.set()
 		for sock in all_clients.iterkeys():
 			sock.sendall(reason)
-			remove_socket(sock, read, write, error, all_clients)
+			remove_socket(sock, read, write, error, all_clients, remove_from_all=False) # prevent size changed durring iteration errors
 		del(read)
 		del(write)
 		del(error)
@@ -165,7 +165,7 @@ def info_message(command):
 	w = """This is socketwrap, running command {}\n""".format(" ".join(command))
 	return w
 
-def remove_socket(sock, read, write, error, all_clients):
+def remove_socket(sock, read, write, error, all_clients, remove_from_all=True):
 	sock.close()
 	if sock in read:
 		read.remove(sock)
@@ -176,7 +176,8 @@ def remove_socket(sock, read, write, error, all_clients):
 	if sock in all_clients.keys():
 		if all_clients[sock].get('fd', None) != None:
 			all_clients[sock]['fd'].close()
-		del(all_clients[sock])
+		if remove_from_all:
+			del(all_clients[sock])
 
 
 if __name__ == '__main__':
