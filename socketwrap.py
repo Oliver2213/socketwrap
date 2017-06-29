@@ -18,9 +18,10 @@ import subprocess_nonblocking
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
 @click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
+@click.option('--password', '--pass', '-pw', 'password', default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
 @click.option('--thread-sleep-time', '-t', default=0.1, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(hostname, port, enable_multiple_connections, loop_delay, thread_sleep_time, command):
+def socket_wrap(hostname, port, enable_multiple_connections, loop_delay, password, thread_sleep_time, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 Args:
 command: The command this program should wrap (including any arguments).
@@ -53,7 +54,7 @@ command: The command this program should wrap (including any arguments).
 		read = [] # sockets that might have something we can read
 		write = [] # sockets that might have free space in their buffer
 		error = [] # sockets we need to handle errors for
-		all_clients = []
+		all_clients = {}
 		read.append(server_sock) # add the server socket so we can accept new connections
 		running = True
 		while running:
@@ -66,8 +67,14 @@ command: The command this program should wrap (including any arguments).
 						read.append(con)
 						write.append(con)
 						error.append(con)
-						all_clients.append(con)
-						con.sendall("Welcome!\nThis is socketwrap, running command {}\n".format(" ".join(command)))
+						all_clients[con] = {}
+						con.sendall("Welcome!\n")
+						if password != None:
+							all_clients[con]['logged_in'] = False
+							if password != None:
+								con.sendall("Password:\n")
+						else:
+							con.sendall(info_message(command))
 					else: # there is already one client connected and enable_multiple_connections is false
 						con.sendall("Sorry, allowing multiple connections is disabled.\nGoodbye.")
 						con.close()
@@ -78,6 +85,22 @@ command: The command this program should wrap (including any arguments).
 					data = f.readline()
 					f.close()
 					if data:
+						if all_clients[sock].get('logged_in', None) == False: # passwored required and this client hasn't provided it yet
+							candidate = data.strip()
+							if candidate == password:
+								sock.sendall("""Logged in to socketwrap.\n{}""".format(info_message(command)))
+								all_clients[sock]['logged_in'] = True
+							else:
+								sock.sendall("Incorrect password.\nGoodbye.")
+								sock.close()
+								if sock in read:
+									read.remove(sock)
+								if sock in write:
+									write.remove(sock)
+								if sock in error:
+									error.remove(sock)
+								del(all_clients[sock])
+							continue # don't process the password as subprocess input
 						try:
 							subproc.stdin.write(data)
 							subproc.stdin.flush()
@@ -90,16 +113,19 @@ command: The command this program should wrap (including any arguments).
 							write.remove(sock)
 						if sock in error:
 							error.remove(sock)
-						all_clients.remove(sock)
+						del(all_clients[sock])
 						sock.close()
 			# now check if the command has any output that needs to be sent to clients
-			if len(command_output_queue)>0 and len(w)>0: # if there is at least one item in the queue and there is at least one socket to send it to
+			# make a list of sockets we can send to (ones for clients that are logged in and that are writable)
+			sendable_clients = [c for c, d in all_clients.iteritems() if d.get('logged_in', True) and c in w]
+			if len(command_output_queue)>0 and len(sendable_clients)>0: # if there is at least one item in the queue and there is at least one socket to send it to
 				i = command_output_queue.popleft()
 				if i == False: # the reader thread has noticed the process has exited or closed it's pipes
 					running = False
 					raise KeyboardInterrupt # directly raise it to stop the boolean from being sent instead of waiting for the loop to complete
-				for sock in w: # for every socket who's buffer is free for writing
+				for sock in sendable_clients: # for every socket who's buffer is free for writing
 					sock.sendall(i)
+				# if sockets_sent_output == 0: # no sockets received this output; they're probably waiting for the client to send the password
 			# handle sockets with errors
 			for sock in e:
 				print("Socket {} has an error!".format(sock.getpeername()))
@@ -108,7 +134,7 @@ command: The command this program should wrap (including any arguments).
 				if sock in write:
 					write.remove(sock)
 				error.remove(sock)
-				all_clients.remove(sock)
+				del(all_clients[sock])
 				sock.close()
 				print("{} has been disconnected.".format(sock.getpeername()))
 			if loop_delay>0:
@@ -126,7 +152,7 @@ command: The command this program should wrap (including any arguments).
 		else:
 			reason = """Shutting down do to error:\n{}\n""".format(e)
 		stop_flag.set()
-		for sock in all_clients:
+		for sock in all_clients.iterkeys():
 			sock.sendall(reason)
 			sock.close()
 		server_sock.close()
@@ -163,6 +189,11 @@ def blocking_poll_command_for_output(handles, output_queue, poll_time, stop_flag
 			except IOError as e:
 				pass
 		time.sleep(poll_time)
+
+def info_message(command):
+	w = """This is socketwrap, running command {}\n""".format(" ".join(command))
+	return w
+
 
 
 if __name__ == '__main__':
