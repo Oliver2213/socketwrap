@@ -16,9 +16,9 @@ import subprocess_nonblocking
 @click.command()
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
+@click.option('--password', '--pass', '-pw', 'password', default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
 @click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
-@click.option('--password', '--pass', '-pw', 'password', default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
 @click.option('--thread-sleep-time', '-t', default=0.1, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.argument('command', nargs=-1, required=True)
 def socket_wrap(hostname, port, enable_multiple_connections, loop_delay, password, thread_sleep_time, command):
@@ -69,21 +69,19 @@ command: The command this program should wrap (including any arguments).
 						error.append(con)
 						all_clients[con] = {}
 						con.sendall("Welcome!\n")
+						all_clients[con]['fd'] = con.makefile('r')
 						if password != None:
 							all_clients[con]['logged_in'] = False
-							if password != None:
-								con.sendall("Password:\n")
+							con.sendall("Password:\n")
 						else:
 							con.sendall(info_message(command))
 					else: # there is already one client connected and enable_multiple_connections is false
 						con.sendall("Sorry, allowing multiple connections is disabled.\nGoodbye.")
-						con.close()
+						remove_socket(con, read, write, error, all_clients)
 						print("{} has been disconnected because allowing multiple connections is disabled.".format(addr))
 				else: # socket with something to read is not the server
 					# large amounts of data might cause a lockup; it's unlikely though
-					f = sock.makefile('r') # use makefile because data should be split by lines
-					data = f.readline()
-					f.close()
+					data = all_clients[sock]['fd'].readline()
 					if data:
 						if all_clients[sock].get('logged_in', None) == False: # passwored required and this client hasn't provided it yet
 							candidate = data.strip()
@@ -91,15 +89,8 @@ command: The command this program should wrap (including any arguments).
 								sock.sendall("""Logged in to socketwrap.\n{}""".format(info_message(command)))
 								all_clients[sock]['logged_in'] = True
 							else:
-								sock.sendall("Incorrect password.\nGoodbye.")
-								sock.close()
-								if sock in read:
-									read.remove(sock)
-								if sock in write:
-									write.remove(sock)
-								if sock in error:
-									error.remove(sock)
-								del(all_clients[sock])
+								sock.sendall("Incorrect password.\nGoodbye.\n")
+								remove_socket(sock, read, write, error, all_clients)
 							continue # don't process the password as subprocess input
 						try:
 							subproc.stdin.write(data)
@@ -107,14 +98,8 @@ command: The command this program should wrap (including any arguments).
 						except IOError as e: # the subprocess has closed
 							running = False
 					else: # a client sending an empty string indicates a disconnect
-						read.remove(sock)
 						print("{} has disconnected.".format(sock.getpeername()))
-						if sock in write:
-							write.remove(sock)
-						if sock in error:
-							error.remove(sock)
-						del(all_clients[sock])
-						sock.close()
+						remove_socket(sock, read, write, error, all_clients)
 			# now check if the command has any output that needs to be sent to clients
 			# make a list of sockets we can send to (ones for clients that are logged in and that are writable)
 			sendable_clients = [c for c, d in all_clients.iteritems() if d.get('logged_in', True) and c in w]
@@ -125,17 +110,10 @@ command: The command this program should wrap (including any arguments).
 					raise KeyboardInterrupt # directly raise it to stop the boolean from being sent instead of waiting for the loop to complete
 				for sock in sendable_clients: # for every socket who's buffer is free for writing
 					sock.sendall(i)
-				# if sockets_sent_output == 0: # no sockets received this output; they're probably waiting for the client to send the password
 			# handle sockets with errors
 			for sock in e:
 				print("Socket {} has an error!".format(sock.getpeername()))
-				if sock in rread:
-					read.remove(sock)
-				if sock in write:
-					write.remove(sock)
-				error.remove(sock)
-				del(all_clients[sock])
-				sock.close()
+				remove_socket(sock, read, write, error, all_clients)
 				print("{} has been disconnected.".format(sock.getpeername()))
 			if loop_delay>0:
 				time.sleep(loop_delay)
@@ -154,11 +132,11 @@ command: The command this program should wrap (including any arguments).
 		stop_flag.set()
 		for sock in all_clients.iterkeys():
 			sock.sendall(reason)
-			sock.close()
-		server_sock.close()
+			remove_socket(sock, read, write, error, all_clients)
 		del(read)
 		del(write)
 		del(error)
+		del(all_clients)
 		del(server_sock)
 		subproc.kill()
 
@@ -194,6 +172,18 @@ def info_message(command):
 	w = """This is socketwrap, running command {}\n""".format(" ".join(command))
 	return w
 
+def remove_socket(sock, read, write, error, all_clients):
+	sock.close()
+	if sock in read:
+		read.remove(sock)
+	if sock in write:
+		write.remove(sock)
+	if sock in error:
+		error.remove(sock)
+	if sock in all_clients.keys():
+		if all_clients[sock].get('fd', None) != None:
+			all_clients[sock]['fd'].close()
+		del(all_clients[sock])
 
 
 if __name__ == '__main__':
