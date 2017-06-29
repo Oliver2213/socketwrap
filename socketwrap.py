@@ -17,11 +17,12 @@ import subprocess_nonblocking
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
 @click.option('--password', '--pass', '-pw', 'password', default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
+@click.option('--append-newline/--no-append-newline', '-a/-A', default=False, show_default=True, help="""Automatically append a newline to each buffer of data received from the subprocess's streams if it doesn't already have one.\nThis isn't normally useful, but for some programs such as shells which write the prompt and don't follow it with a newline character (which shows the command you type on the same line), you won't see that prompt when using them with socketwrap.\nThis option flag fixes such problems, though if the amount of output is extremely large in a rare case newlines could be mistakenly added where they aren't supposed to go by this option.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
 @click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
 @click.option('--thread-sleep-time', '-t', default=0.1, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(hostname, port, enable_multiple_connections, loop_delay, password, thread_sleep_time, command):
+def socket_wrap(hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 Args:
 command: The command this program should wrap (including any arguments).
@@ -45,7 +46,7 @@ command: The command this program should wrap (including any arguments).
 	try:
 		command_output_queue = deque() # queue of strings sent by the command we're wrapping
 		stop_flag = threading.Event()
-		t = threading.Thread(target=nonblocking_poll_command_for_output, args=(subproc, command_output_queue, thread_sleep_time, stop_flag))
+		t = threading.Thread(target=nonblocking_poll_command_for_output, args=(subproc, command_output_queue, thread_sleep_time, append_newline, stop_flag))
 		t.start()
 		server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server_sock.bind((hostname, port))
@@ -141,15 +142,19 @@ command: The command this program should wrap (including any arguments).
 		subproc.kill()
 
 
-def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, stop_flag):
+def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, append_newline, stop_flag):
 	"""Check stdout and stderr every poll_time to see if it has new output. If it does, add it as a string to output_queue."""
 	while not stop_flag.is_set():
 		try:
 			stdout_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, tries=1)
 			stderr_buff = subprocess_nonblocking.recv_some(subproc, timeout=poll_time, tries=1, stderr=True)
 			if stdout_buff:
+				if append_newline and not stdout_buff.endswith('\n'):
+					stdout_buff += "\n"
 				output_queue.append(stdout_buff)
 			if stderr_buff:
+				if append_newline and not stderr_buff.endswith('\n'):
+					stderr_buff += "\n"
 				output_queue.append(stderr_buff)
 		except subprocess_nonblocking.PipeClosedError as e:
 			output_queue.append(False)
