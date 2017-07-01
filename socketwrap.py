@@ -4,8 +4,9 @@
 from collections import deque
 import click, socket, select
 from subprocess import PIPE
-import sys, time, threading, subprocess_nonblocking, ssl
+import sys, time, threading, subprocess_nonblocking, ssl, subprocess
 context = None
+gitcommit = int(subprocess.check_output (["git", "describe", "--always"]).decode(), 16)
 # define the command and it's options and args
 
 @click.command()
@@ -18,9 +19,9 @@ context = None
 @click.option('--thread-sleep-time', '-t', default=0.1, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.option ("--enable-ssl/--disable-ssl", "-s/-S", default=True, show_default=True, help="""Specifies whether to use SSL to encrypt remote connections or not. If true, SSL will be used; if false, SSL will not be used and the connection will be unencrypted.""")
 @click.option ("--ssl-wrapped-socket-certfiles", "-wsc", type=(click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True)), default=(None, None), show_default=True, help="""specifies optional files which contain a certificate to be used to identify the local side of the connection. The first parameter is the certfile and the second is the keyfile.""")
-@click.version_option ("0.1.0", prog_name="socketwrap", message="""%(prog)s, version %(version)s\nUsing {}\n{}""".format (ssl.OPENSSL_VERSION, """Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\nOriginal copyright Copyright (c) 2017 Blake Oliver"""))
+@click.version_option ("0.1.0.{}".format (gitcommit), prog_name="socketwrap", message="""%(prog)s, version %(version)s\nUsing {}\n{}""".format (ssl.OPENSSL_VERSION, """Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\nOriginal copyright Copyright (c) 2017 Blake Oliver"""))
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, enable_ssl, ssl_wrapped_socket_certfiles, , command):
+def socket_wrap(hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, enable_ssl, ssl_wrapped_socket_certfiles, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 
 Args:
