@@ -38,8 +38,21 @@ Any data received from it's stdout and stderr streams is buffered until the firs
 If the command exits with a non-zero returncode before the server is initialized, it's stderr is printed to the console.
 
 """
+	command = list(command)
+	subproc = subprocess_nonblocking.Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
+	time.sleep(0.2) # wait a bit before checking it's returncode
+	r = subproc.poll()
+	if r != None:
+		if r == 0:
+			print("The specified command has exited; not starting server.")
+			return
+		else: # non-zero returncode
+			print("Subcommand exited with a non-zero returncode. It's standard error is:")
+			print((subproc.stderr.read()))
+			return
+	# the returncode was none, so the process is running
+	# set up the server
 	if enable_ssl:
-		command = list(command)
 		context = ssl.create_default_context (ssl.Purpose.CLIENT_AUTH)
 		context.load_default_certs(ssl.Purpose.SERVER_AUTH)
 		if len(ssl_wrapped_socket_certfiles) == 2:
@@ -49,19 +62,6 @@ If the command exits with a non-zero returncode before the server is initialized
 		else:
 			print ("Warning: not loading certificate or keyfile; may cause security check errors.")
 
-		subproc = subprocess_nonblocking.Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-		time.sleep(0.2) # wait a bit before checking it's returncode
-		r = subproc.poll()
-		if r != None:
-			if r == 0:
-				print("The specified command has exited; not starting server.")
-				return
-			else: # non-zero returncode
-				print("Subcommand exited with a non-zero returncode. It's standard error is:")
-				print((subproc.stderr.read()))
-				return
-		# the returncode was none, so the process is running
-		# set up the server
 		try:
 			command_output_queue = deque() # queue of strings sent by the command we're wrapping
 			stop_flag = threading.Event()
@@ -165,20 +165,6 @@ If the command exits with a non-zero returncode before the server is initialized
 			conn.shutdown(socket.SHUT_RDWR)
 			conn.close()
 	else:
-		command = list(command)
-		subproc = subprocess_nonblocking.Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
-		time.sleep(0.2) # wait a bit before checking it's returncode
-		r = subproc.poll()
-		if r != None:
-			if r == 0:
-				print("The specified command has exited; not starting server.")
-				return
-			else: # non-zero returncode
-				print("Subcommand exited with a non-zero returncode. It's standard error is:")
-				print((subproc.stderr.read()))
-				return
-		# the returncode was none, so the process is running
-		# set up the server
 		try:
 			command_output_queue = deque() # queue of strings sent by the command we're wrapping
 			stop_flag = threading.Event()
