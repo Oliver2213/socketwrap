@@ -10,8 +10,9 @@ import time
 import sys
 
 PIPE = subprocess.PIPE
-
-if subprocess.mswindows:
+# python 3.x does not have a mswindows property in the subprocess module
+# therefore, use os/sys instead to determine the OS.
+if sys.platform == "win32":
     from win32file import ReadFile, WriteFile
     from win32pipe import PeekNamedPipe
     import msvcrt
@@ -43,7 +44,7 @@ class Popen(subprocess.Popen):
         getattr(self, which).close()
         setattr(self, which, None)
     
-    if subprocess.mswindows:
+    if sys.platform == "win32":
         # define the send method for windows
         def send(self, input):
             """Send the given string to the subprocess's stdin stream. Return None if stdin was not directed to a pipe."""
@@ -55,7 +56,7 @@ class Popen(subprocess.Popen):
                 (errCode, written) = WriteFile(x, input)
             except ValueError:
                 return self._close('stdin')
-            except (subprocess.pywintypes.error, Exception), why:
+            except (subprocess.pywintypes.error, Exception) as why:
                 if why[0] in (109, errno.ESHUTDOWN):
                     return self._close('stdin')
                 raise
@@ -77,13 +78,13 @@ class Popen(subprocess.Popen):
                     (errCode, read) = ReadFile(x, nAvail, None)
             except ValueError:
                 return self._close(which)
-            except (subprocess.pywintypes.error, Exception), why:
+            except (subprocess.pywintypes.error, Exception) as why:
                 if why[0] in (109, errno.ESHUTDOWN):
                     return self._close(which)
                 raise
             
             if self.universal_newlines:
-                read = self._translate_newlines(read)
+                read = self._translate_newlines(read, "utf-8", "strict")
             return read
 
     else: # define for unix-like OSs
@@ -96,7 +97,7 @@ class Popen(subprocess.Popen):
 
             try:
                 written = os.write(self.stdin.fileno(), input)
-            except OSError, why:
+            except OSError as why:
                 if why[0] == errno.EPIPE: #broken pipe
                     return self._close('stdin')
                 raise
@@ -169,10 +170,10 @@ if __name__ == '__main__':
         shell, commands, tail = ('sh', ('ls', 'echo HELLO WORLD'), '\n')
     
     a = Popen(shell, stdin=PIPE, stdout=PIPE)
-    print recv_some(a),
+    print(recv_some(a), end=' ')
     for cmd in commands:
         send_all(a, cmd + tail)
-        print recv_some(a),
+        print(recv_some(a), end=' ')
     send_all(a, 'exit' + tail)
-    print recv_some(a, throw_exception=False)
+    print(recv_some(a, throw_exception=False))
     a.wait()
