@@ -5,12 +5,15 @@
 from collections import deque
 import click, socket, select
 from subprocess import PIPE
-import sys, time, threading, subprocess_nonblocking, ssl, subprocess
+import sys, time, threading, subprocess_nonblocking, ssl, subprocess, yaml
 context = None
 # gitcommit = int(subprocess.check_output (["git", "describe", "--always"]).decode(), 16)
+config = None
+
 # define the command and it's options and args
 
 @click.command()
+@click.option ("--config-file", "-C", type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), multiple=False, help="""Reads a configuration file and overrides all options specified on the command line with the values in the configuration file if the values are specified within that file. This file must be in YAML format (use cfggen.py to generate one).""")
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
 @click.option('--password', '--pass', '-pw', 'password', prompt=True, hide_input=True, confirmation_prompt=True, default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
@@ -23,7 +26,7 @@ context = None
 @click.option('--key-file', '-k', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), default=None, show_default=True, help="""The ssl certificate key file to be used with the '--cert-file' option.""")
 @click.version_option ("0.1.1", "-v", prog_name="socketwrap", message="""%(prog)s, version %(version)s\nOriginal copyright Copyright (c) 2017 Blake Oliver.\nUsing {}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.""".format (ssl.OPENSSL_VERSION))
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, enable_ssl, key_file, cert_file, command):
+def socket_wrap(config_file, hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, enable_ssl, key_file, cert_file, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 
 Args:
@@ -35,6 +38,23 @@ Any data received from it's stdout and stderr streams is buffered until the firs
 If the command exits with a non-zero returncode before the server is initialized, it's stderr is printed to the console.
 
 """
+	if not config is None:
+		# Load a YAML configuration file
+		try:
+			config = yaml.safe_load (config_file)
+			if "hostname" in config: hostname = config["hostname"]
+			if "port" in config: port = config["port"]
+			if "append_newline" in config: append_newline = config["append_newline"]
+			if "enable_multiple_connections" in config: enable_multiple_connections = config["enable_multiple_connections"]
+			if "loop_delay" in config: loop_delay = config["loop_delay"]
+			if "thread_sleep_time" in config: thread_sleep_time = config["thread_sleep_time"]
+			if "enable_ssl" in config: enable_ssl = config["enable_ssl"]
+			if "key_file" in config: key_file = config["key_file"]
+			if "cert_file" in config: cert_file = config["cert_file"]
+		except BaseException as ex:
+			click.echo ("YAML configuration parsing error: {}".format (ex), err=True)
+			return
+
 	command = list(command)
 	subproc = subprocess_nonblocking.Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
 	time.sleep(0.2) # wait a bit before checking it's returncode
