@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # socketwrap
 # Author: Blake Oliver <oliver22213@me.com>
 
@@ -17,7 +18,7 @@ gitcommit = int(subprocess.check_output (["git", "describe", "--always"]).decode
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
 @click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
 @click.option('--thread-sleep-time', '-t', default=0.1, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
-@click.option ("--enable-ssl/--disable-ssl", "-s/-S", default=True, show_default=True, help="""Specifies whether to use SSL to encrypt remote connections or not. If true, SSL will be used; if false, SSL will not be used and the connection will be unencrypted.""")
+@click.option ("--enable-ssl/--disable-ssl", "-s/-S", default=False, show_default=True, help="""Specifies whether to use SSL to encrypt remote connections or not. If true, SSL will be used; if false, SSL will not be used and the connection will be unencrypted.""")
 @click.option ("--ssl-wrapped-socket-certfiles", "-wsc", type=(click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True)), default=(None, None), show_default=True, help="""specifies optional files which contain a certificate to be used to identify the local side of the connection. The first parameter is the certfile and the second is the keyfile.""")
 @click.version_option ("0.1.0.{}".format (gitcommit), prog_name="socketwrap", message="""%(prog)s, version %(version)s\nUsing {}\n{}""".format (ssl.OPENSSL_VERSION, """Permission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.\nOriginal copyright Copyright (c) 2017 Blake Oliver"""))
 @click.argument('command', nargs=-1, required=True)
@@ -50,9 +51,9 @@ If the command exits with a non-zero returncode before the server is initialized
 	if enable_ssl:
 		context = ssl.create_default_context (ssl.Purpose.CLIENT_AUTH)
 		context.load_default_certs(ssl.Purpose.SERVER_AUTH)
-		if len(ssl_wrapped_socket_certfiles) == 1:
+		if ssl_wrapped_socket_certfiles[0] != None and ssl_wrapped_socket_certfiles[1] == None: # cert given, no key
 			context.load_cert_chain (certfile=ssl_wrapped_socket_certfiles[0])
-		elif len(ssl_wrapped_socket_certfiles) == 2:
+		elif ssl_wrapped_socket_certfiles[0] != None and ssl_wrapped_socket_certfiles[1] != None:
 			context.load_cert_chain (certfile=ssl_wrapped_socket_certfiles[0], keyfile=ssl_wrapped_socket_certfiles[1])
 		else:
 			print ("Warning: not loading certificate or keyfile; may cause security check errors.")

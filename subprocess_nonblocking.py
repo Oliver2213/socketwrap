@@ -84,7 +84,10 @@ class Popen(subprocess.Popen):
                 raise
             
             if self.universal_newlines:
-                read = self._translate_newlines(read, "utf-8", "strict")
+                if sys.version_info.major == 2:
+                    read = self._translate_newlines(read)
+                else:
+                    read = self._translate_newlines(read, "utf-8", "strict")
             return read
 
     else: # define for unix-like OSs
@@ -163,17 +166,3 @@ def send_all(subproc, data):
 class PipeClosedError(Exception):
 	pass
 
-if __name__ == '__main__':
-    if sys.platform == 'win32':
-        shell, commands, tail = ('cmd', ('dir /w', 'echo HELLO WORLD'), '\r\n')
-    else:
-        shell, commands, tail = ('sh', ('ls', 'echo HELLO WORLD'), '\n')
-    
-    a = Popen(shell, stdin=PIPE, stdout=PIPE)
-    print(recv_some(a), end=' ')
-    for cmd in commands:
-        send_all(a, cmd + tail)
-        print(recv_some(a), end=' ')
-    send_all(a, 'exit' + tail)
-    print(recv_some(a, throw_exception=False))
-    a.wait()
