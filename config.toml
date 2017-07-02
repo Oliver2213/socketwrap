@@ -5,5 +5,5 @@ enable_multiple_connections = true
 loop_delay = 0.025
 thread_sleep_time = 0.1
 enable_ssl = true
-certfile = "cert.pem"
-keyfile = "cert.pem"
+cert_file = "cert.pem"
+key_file = "cert.pem"
