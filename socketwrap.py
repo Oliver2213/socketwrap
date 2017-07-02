@@ -5,10 +5,9 @@
 from collections import deque
 import click, socket, select
 from subprocess import PIPE
-import sys, time, threading, subprocess_nonblocking, ssl, subprocess, yaml
+import sys, time, threading, subprocess_nonblocking, ssl, subprocess, pytoml
 context = None
 # gitcommit = int(subprocess.check_output (["git", "describe", "--always"]).decode(), 16)
-config = None
 
 # define the command and it's options and args
 
@@ -38,10 +37,11 @@ Any data received from it's stdout and stderr streams is buffered until the firs
 If the command exits with a non-zero returncode before the server is initialized, it's stderr is printed to the console.
 
 """
-	if not config is None:
+	if not len(config_file) == 0:
 		# Load a YAML configuration file
 		try:
-			config = yaml.safe_load (config_file)
+			with open (config_file, mode="rb") as f:
+				config = pytoml.load (f)
 			if "hostname" in config: hostname = config["hostname"]
 			if "port" in config: port = config["port"]
 			if "append_newline" in config: append_newline = config["append_newline"]
@@ -52,7 +52,7 @@ If the command exits with a non-zero returncode before the server is initialized
 			if "key_file" in config: key_file = config["key_file"]
 			if "cert_file" in config: cert_file = config["cert_file"]
 		except BaseException as ex:
-			click.echo ("YAML configuration parsing error: {}".format (ex), err=True)
+			click.echo ("TOML configuration parsing error: {}".format (ex), err=True)
 			return
 
 	command = list(command)
