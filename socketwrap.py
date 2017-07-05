@@ -45,19 +45,19 @@ def generate_config(ctx, param, val):
 @click.command()
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
-@click.option('--password', '--pass', '-pw', 'password', prompt=True, hide_input=True, confirmation_prompt=True, default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
-@click.option ('--config-file', '--config', '-c', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), multiple=False, default="socketwrap.conf", show_default=True, help="""Reads a configuration file and overrides all options specified on the command line with the values in the configuration file if the values are specified within that file. This file must be in TOML format (use the '-g' option to generate one).""")
+@click.option('--password/--no-password', '--pass/--no-pass', '-pw/-npw', 'use_password', is_flag=True, default=False, help="""A flag that will prompt you when the program starts up for a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
+@click.option ('--config-file', '--config', 'config_file', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), multiple=False, help="""Reads a configuration file and overrides all options specified on the command line with the values in the configuration file if the values are specified within that file. This file must be in TOML format (use the '-g' option to generate one).""")
 @click.option('--generate-config', '-g', is_flag=True, callback=generate_config, expose_value=False, is_eager=True, help="""Generates a config file with values you provide. This can be used with the '-c' option so you don't need to specify specific options each time you want to run the program.""")
 @click.option('--append-newline/--no-append-newline', '-a/-A', default=False, show_default=True, help="""Automatically append a newline to each buffer of data received from the subprocess's streams if it doesn't already have one.\nThis isn't normally useful, but for some programs such as shells which write the prompt and don't follow it with a newline character (which shows the command you type on the same line), you won't see that prompt when using them with socketwrap.\nThis option flag fixes such problems, though if the amount of output is extremely large in a rare case newlines could be mistakenly added where they aren't supposed to go by this option.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
 @click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
 @click.option('--thread-sleep-time', '-t', default=0.1, show_default=True, help="""How long the thread that reads output from the given command will sleep. Setting this to a lower value will make socketwrap notice and send output quicker, but will raise it's CPU usage""")
 @click.option ('--enable-ssl/--disable-ssl', '-s/-S', default=False, show_default=True, help="""Specifies whether to use SSL to encrypt remote connections or not. If true, SSL will be used; if false, SSL will not be used and the connection will be unencrypted.""")
-@click.option ('--cert-file', '-c', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), default=None, show_default=True, help="""specifies a file which contains a certificate to be used to identify the local side of the ssl connection.""")
+@click.option ('--cert-file', '--certfile', 'cert_file', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), default=None, show_default=True, help="""specifies a file which contains a certificate to be used to identify the local side of the ssl connection.""")
 @click.option('--key-file', '-k', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), default=None, show_default=True, help="""The ssl certificate key file to be used with the '--cert-file' option.""")
 @click.version_option (__version__, "-v", prog_name="socketwrap", message="""%(prog)s, version %(version)s\n\nOriginal copyright Copyright (c) 2017 Blake Oliver <oliver22213@me.com>.\nUsing {}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.""".format (ssl.OPENSSL_VERSION))
 @click.argument('command', nargs=-1, required=True)
-def socket_wrap(config_file, hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, enable_ssl, key_file, cert_file, command):
+def socket_wrap(config_file, hostname, port, append_newline,  enable_multiple_connections, loop_delay, use_password, thread_sleep_time, enable_ssl, key_file, cert_file, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
 
 Args:
@@ -69,7 +69,11 @@ Any data received from it's stdout and stderr streams is buffered until the firs
 If the command exits with a non-zero returncode before the server is initialized, it's stderr is printed to the console.
 
 """
-	if not len(config_file) == 0:
+	if use_password == True:
+		password = click.prompt("Enter a password", hide_input=True, confirmation_prompt=True)
+	else:
+		password = None
+	if config_file != None and len(config_file) > 0:
 		try:
 			with open (config_file, mode="rb") as f:
 				config = pytoml.load (f)
@@ -99,7 +103,7 @@ If the command exits with a non-zero returncode before the server is initialized
 			return
 	# the returncode was none, so the process is running
 	# set up the server
-	if enable_ssl:
+	if enable_ssl == True:
 		context = ssl.create_default_context (ssl.Purpose.CLIENT_AUTH)
 		context.load_default_certs(ssl.Purpose.SERVER_AUTH)
 		if cert_file != None and key_file == None: # cert given, no key
@@ -262,6 +266,6 @@ if __name__ == '__main__':
 			return_code = socket_wrap.invoke(context)
 	except (click.ClickException, IOError, click.exceptions.Abort) as e:
 		return_code = getattr("e", "return_code", None) or 0
-		if getattr("e", "show", None):
+		if getattr("e", "show", None) != None:
 			e.show()
 	sys.exit(return_code)
