@@ -15,6 +15,7 @@ context = None
 def generate_config(ctx, param, val):
 	if not val or ctx.resilient_parsing:
 		return
+	print(ctx.command)
 	config = OrderedDict()
 	click.echo("You are about to be asked to provide values for socketwrap's config options. Pressing enter will leave the default.")
 	click.echo("If you are unsure what an option does, you can use the '--help' option to show the full help for each.")
@@ -262,7 +263,8 @@ if __name__ == '__main__':
 		context = socket_wrap.make_context(sys.argv[0], sys.argv[1:])
 		with context:
 			return_code = socket_wrap.invoke(context)
-	except click.ClickException as e:
+	except (click.ClickException, IOError, click.exceptions.Abort) as e:
 		return_code = getattr("e", "return_code", None) or 1
-		e.show()
+		if getattr("e", "show", None):
+			e.show()
 	sys.exit(return_code)
