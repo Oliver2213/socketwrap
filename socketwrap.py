@@ -2,20 +2,52 @@
 # socketwrap
 # Author: Blake Oliver <oliver22213@me.com>
 
-from collections import deque
-import click, socket, select
+from collections import deque, OrderedDict
+import click
+import socket
+import select
 from subprocess import PIPE
 import sys, time, threading, subprocess_nonblocking, ssl, subprocess, pytoml
+import pytoml
 context = None
-# gitcommit = int(subprocess.check_output (["git", "describe", "--always"]).decode(), 16)
+
+# generate config callback
+def generate_config(ctx, param, val):
+	if not val or ctx.resilient_parsing:
+		return
+	config = OrderedDict()
+	click.echo("You are about to be asked to provide values for socketwrap's config options. Pressing enter will leave the default.")
+	click.echo("If you are unsure what an option does, you can use the '--help' option to show the full help for each.")
+	config["hostname"] = click.prompt ("""Specify the hostname or IP address socketwrap should listen on.""", default="127.0.0.1", show_default=True, type=click.STRING)
+	config["port"] = click.prompt ("""Specify the port socketwrap should listen on.""", default=3000, show_default=True, type=click.INT)
+	config["append_newline"] = click.confirm ("""Should socketwrap automatically append a newline to each buffer of data received from the subprocess's streams if it doesn't already have one?""", default=False, show_default=True)
+	config["enable_multiple_connections"] = click.confirm ("""Allow multiple connections?""", default=False, show_default=True)
+	config["loop_delay"] = click.prompt ("""Specify the loop delay.""", default=0.025, show_default=True, type=click.FLOAT)
+	config["thread_sleep_time"] = click.prompt ("""Specify the thread sleep time.""", default=0.1, show_default=True, type=click.FLOAT)
+	config["enable_ssl"] = click.confirm ("""Should socketwrap encrypt connections to clients with SSL?""", default=False, show_default=True)
+	if config['enable_ssl'] == True:
+		config["cert_file"] = click.prompt ("""Specify the public key certificate file.""", default=None, type=click.STRING, show_default=True, confirmation_prompt=True)
+		config["key_file"] = click.prompt ("Specify the certificate key file.", default=None, show_default=True, type=click.STRING, confirmation_prompt=True)
+	click.echo ("Please review your below configuration to ensure it is correct. Answering yes will save the configuration (and you can load it later with the '-c' option); answering no will exit.")
+	for key, value in config.items():
+		click.echo ("{}: {}".format (key, value))
+	correct = click.confirm ("Is this configuration correct?", default=True, show_default=True)
+	if correct == True:
+		file = click.prompt ("Specify the configuration filename.", default="socketwrap.conf", show_default=True, type=click.STRING)
+		with open (file, "w") as f:
+			pytoml.dump (config, f)
+			f.close()
+		click.echo ("Configuration written to {}.".format (file))
+	ctx.exit()
 
 # define the command and it's options and args
 
 @click.command()
-@click.option ("--config-file", "-C", type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), multiple=False, help="""Reads a configuration file and overrides all options specified on the command line with the values in the configuration file if the values are specified within that file. This file must be in YAML format (use cfggen.py to generate one).""")
 @click.option('--host', '--hostname', '-hn', default='127.0.0.1', show_default=True, help="""Interface the server should listen on.""")
 @click.option('--port', '-p', default=3000, show_default=True, help="""Port the server should bind to.""")
 @click.option('--password', '--pass', '-pw', 'password', prompt=True, hide_input=True, confirmation_prompt=True, default=None, help="""Specify a password that clients must provide before they are allowed to view or send data to the wrapped subprocess.""")
+@click.option ('--config-file', '--config', '-c', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), multiple=False, default="socketwrap.conf", show_default=True, help="""Reads a configuration file and overrides all options specified on the command line with the values in the configuration file if the values are specified within that file. This file must be in TOML format (use the '-g' option to generate one).""")
+@click.option('--generate-config', '-g', is_flag=True, callback=generate_config, expose_value=False, is_eager=True, help="""Generates a config file with values you provide. This can be used with the '-c' option so you don't need to specify specific options each time you want to run the program.""")
 @click.option('--append-newline/--no-append-newline', '-a/-A', default=False, show_default=True, help="""Automatically append a newline to each buffer of data received from the subprocess's streams if it doesn't already have one.\nThis isn't normally useful, but for some programs such as shells which write the prompt and don't follow it with a newline character (which shows the command you type on the same line), you won't see that prompt when using them with socketwrap.\nThis option flag fixes such problems, though if the amount of output is extremely large in a rare case newlines could be mistakenly added where they aren't supposed to go by this option.""")
 @click.option('--enable-multiple-connections/--disable-multiple-connections', '-e/-E', help="""Allow multiple connections. Each one will be able to send to the subprocess as well as receive.""")
 @click.option('--loop-delay', '-l', default=0.025, show_default=True, help="""How long to sleep for at the end of each main loop iteration. This is meant to reduce CPU spiking of the main (socket-handling) thread. Setting this value too high introduces unnecessary lag when handling new data from clients or the wrapped command; setting it too low defeats the purpose. If it's set to 0, the delay is disabled.""")
@@ -38,7 +70,6 @@ If the command exits with a non-zero returncode before the server is initialized
 
 """
 	if not len(config_file) == 0:
-		# Load a YAML configuration file
 		try:
 			with open (config_file, mode="rb") as f:
 				config = pytoml.load (f)
@@ -54,7 +85,6 @@ If the command exits with a non-zero returncode before the server is initialized
 		except BaseException as ex:
 			click.echo ("TOML configuration parsing error: {}".format (ex), err=True)
 			return
-
 	command = list(command)
 	subproc = subprocess_nonblocking.Popen(command, stdin=PIPE, stdout=PIPE, stderr=PIPE, universal_newlines=True)
 	time.sleep(0.2) # wait a bit before checking it's returncode
