@@ -9,13 +9,12 @@ import select
 from subprocess import PIPE
 import sys, time, threading, subprocess_nonblocking, ssl, subprocess, pytoml
 import pytoml
-context = None
 
+__version__ = '0.2.0'
 # generate config callback
 def generate_config(ctx, param, val):
 	if not val or ctx.resilient_parsing:
 		return
-	print(ctx.command)
 	config = OrderedDict()
 	click.echo("You are about to be asked to provide values for socketwrap's config options. Pressing enter will leave the default.")
 	click.echo("If you are unsure what an option does, you can use the '--help' option to show the full help for each.")
@@ -56,7 +55,7 @@ def generate_config(ctx, param, val):
 @click.option ('--enable-ssl/--disable-ssl', '-s/-S', default=False, show_default=True, help="""Specifies whether to use SSL to encrypt remote connections or not. If true, SSL will be used; if false, SSL will not be used and the connection will be unencrypted.""")
 @click.option ('--cert-file', '-c', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), default=None, show_default=True, help="""specifies a file which contains a certificate to be used to identify the local side of the ssl connection.""")
 @click.option('--key-file', '-k', type=click.Path (exists=True, file_okay=True, dir_okay=False, writable=False, readable=True, resolve_path=True), default=None, show_default=True, help="""The ssl certificate key file to be used with the '--cert-file' option.""")
-@click.version_option ("0.1.1", "-v", prog_name="socketwrap", message="""%(prog)s, version %(version)s\nOriginal copyright Copyright (c) 2017 Blake Oliver.\nUsing {}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.""".format (ssl.OPENSSL_VERSION))
+@click.version_option (__version__, "-v", prog_name="socketwrap", message="""%(prog)s, version %(version)s\n\nOriginal copyright Copyright (c) 2017 Blake Oliver <oliver22213@me.com>.\nUsing {}\n\nPermission is hereby granted, free of charge, to any person obtaining a copy\nof this software and associated documentation files (the "Software"), to deal\nin the Software without restriction, including without limitation the rights\nto use, copy, modify, merge, publish, distribute, sublicense, and/or sell\ncopies of the Software, and to permit persons to whom the Software is\nfurnished to do so, subject to the following conditions:\n\nThe above copyright notice and this permission notice shall be included in all\ncopies or substantial portions of the Software.\n\nTHE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR\nIMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,\nFITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE\nAUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER\nLIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,\nOUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE\nSOFTWARE.""".format (ssl.OPENSSL_VERSION))
 @click.argument('command', nargs=-1, required=True)
 def socket_wrap(config_file, hostname, port, append_newline,  enable_multiple_connections, loop_delay, password, thread_sleep_time, enable_ssl, key_file, cert_file, command):
 	"""Capture a given command's standard input, standard output, and standard error (stdin, stdout, and stderr) streams and let clients send and receive data to it by connecting to this program.
@@ -92,11 +91,11 @@ If the command exits with a non-zero returncode before the server is initialized
 	r = subproc.poll()
 	if r != None:
 		if r == 0:
-			print("The specified command has exited; not starting server.")
+			click.echo("The specified command has exited; not starting server.")
 			return
 		else: # non-zero returncode
-			print("Subcommand exited with a non-zero returncode. It's standard error is:")
-			print((subproc.stderr.read()))
+			click.echo("Subcommand exited with a non-zero returncode. It's standard error is:")
+			click.echo((subproc.stderr.read()))
 			return
 	# the returncode was none, so the process is running
 	# set up the server
@@ -108,7 +107,7 @@ If the command exits with a non-zero returncode before the server is initialized
 		elif cert_file!= None and key_file != None:
 			context.load_cert_chain (certfile=cert_file, keyfile=key_file)
 		else:
-			print ("Warning: not loading certificate or keyfile; may cause security check errors.")
+			click.echo ("Warning: not loading certificate or keyfile; may cause security check errors.")
 	else:
 		context = None
 
@@ -120,7 +119,7 @@ If the command exits with a non-zero returncode before the server is initialized
 		server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 		server_sock.bind((hostname, port))
 		server_sock.listen(2)
-		print("Command started and server listening on {}:{}".format(hostname, port))
+		click.echo("Command started and server listening on {}:{}".format(hostname, port))
 		read = [] # sockets that might have something we can read
 		write = [] # sockets that might have free space in their buffer
 		error = [] # sockets we need to handle errors for
@@ -138,7 +137,7 @@ If the command exits with a non-zero returncode before the server is initialized
 					else:
 						con, addr = sock.accept()
 
-					print("""{} has connected.""".format(addr))
+					click.echo("""{} has connected.""".format(addr))
 					if enable_multiple_connections or len(all_clients)==0:
 						read.append(con)
 						write.append(con)
@@ -154,7 +153,7 @@ If the command exits with a non-zero returncode before the server is initialized
 					else: # there is already one client connected and enable_multiple_connections is false
 						con.sendall("Sorry, allowing multiple connections is disabled.\nGoodbye.".encode())
 						remove_socket(con, read, write, error, all_clients)
-						print("{} has been disconnected because allowing multiple connections is disabled.".format(addr))
+						click.echo("{} has been disconnected because allowing multiple connections is disabled.".format(addr))
 				else: # socket with something to read is not the server
 					# large amounts of data might cause a lockup; it's unlikely though
 					data = all_clients[sock]['fd'].readline()
@@ -167,6 +166,7 @@ If the command exits with a non-zero returncode before the server is initialized
 							else:
 								sock.sendall("Incorrect password.\nGoodbye.\n".encode())
 								remove_socket(sock, read, write, error, all_clients)
+								click.echo("{} was removed because they provided an incorrect password.".format(sock.getpeername()))
 							continue # don't process the password as subprocess input
 						try:
 							subproc.stdin.write(data)
@@ -174,11 +174,11 @@ If the command exits with a non-zero returncode before the server is initialized
 						except IOError as e: # the subprocess has closed
 							running = False
 					else: # a client sending an empty string indicates a disconnect
-						print(("{} has disconnected.".format(sock.getpeername())))
+						click.echo("{} has disconnected.".format(sock.getpeername()))
 						remove_socket(sock, read, write, error, all_clients)
 			# now check if the command has any output that needs to be sent to clients
 			# make a list of sockets we can send to (ones for clients that are logged in and that are writable)
-			sendable_clients = [c for c, d in all_clients.items() if d.get('logged_in', True) and c in w]
+			sendable_clients = [c for c, d in all_clients.items() if d.get('logged_in', True) and c in w] # for every client socket that is logged in and is in the writable list
 			if len(command_output_queue)>0 and len(sendable_clients)>0: # if there is at least one item in the queue and there is at least one socket to send it to
 				i = command_output_queue.popleft()
 				if i == False: # the reader thread has noticed the process has exited or closed it's pipes
@@ -188,9 +188,8 @@ If the command exits with a non-zero returncode before the server is initialized
 					sock.sendall(i.encode())
 			# handle sockets with errors
 			for sock in e:
-				print(("Socket {} has an error!".format(sock.getpeername())))
+				click.echo("Socket {} has an error, and has been disconnected.".format(sock.getpeername()))
 				remove_socket(sock, read, write, error, all_clients)
-				print(("{} has been disconnected.".format(sock.getpeername())))
 			if loop_delay>0:
 				time.sleep(loop_delay)
 
@@ -198,11 +197,11 @@ If the command exits with a non-zero returncode before the server is initialized
 		raise KeyboardInterrupt
 	except BaseException as e:
 		if isinstance(e, KeyboardInterrupt):
-			if subproc.poll() != None:
+			if subproc.poll() != None: # subprocess has a return code
 				reason = "Shutting down because command has exited.\n"
 			else: # subprocess is still running
 				reason = "Shutting down.\n"
-			print(reason)
+			click.echo(reason)
 		else:
 			reason = """Shutting down do to error:\n{}\n""".format(e)
 		stop_flag.set()
@@ -237,7 +236,7 @@ def nonblocking_poll_command_for_output(subproc, output_queue, poll_time, append
 
 
 def info_message(command):
-	w = """This is socketwrap, running command {}\n""".format(" ".join(command))
+	w = """This is socketwrap version {}, running command\n{}\n""".format(__version__, " ".join(command))
 	return w
 
 def remove_socket(sock, read, write, error, all_clients, remove_from_all=True):
@@ -256,15 +255,13 @@ def remove_socket(sock, read, write, error, all_clients, remove_from_all=True):
 
 
 if __name__ == '__main__':
-	# socket_wrap()
 	# handle click exceptions
 	try:
-		# return_code = socket_wrap.main(standalone_mode=False)
 		context = socket_wrap.make_context(sys.argv[0], sys.argv[1:])
 		with context:
 			return_code = socket_wrap.invoke(context)
 	except (click.ClickException, IOError, click.exceptions.Abort) as e:
-		return_code = getattr("e", "return_code", None) or 1
+		return_code = getattr("e", "return_code", None) or 0
 		if getattr("e", "show", None):
 			e.show()
 	sys.exit(return_code)
